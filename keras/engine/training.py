@@ -659,7 +659,11 @@ class Model(Container):
                     else:
                         self.metrics_names.append(self.output_layers[i].name + '_acc')
                 else:
-                    metric_fn = metrics_module.get(metric)
+                    try:
+                        metric_fn = metrics_module.get(metric)
+                    except Exception:  # insert dummy metric to be filled by callbacks
+                        metric_fn = lambda y_true, y_pred: K.zeros((1,))
+                        metric_fn.__name__ = metric
                     self.metrics_tensors.append(metric_fn(y_true, y_pred))
                     if len(self.output_names) == 1:
                         self.metrics_names.append(metric_fn.__name__)
