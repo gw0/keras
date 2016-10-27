@@ -415,7 +415,7 @@ class GRU(Recurrent):
                  init='glorot_uniform', inner_init='orthogonal',
                  activation='tanh', inner_activation='hard_sigmoid',
                  W_regularizer=None, U_regularizer=None, b_regularizer=None,
-                 dropout_W=0., dropout_U=0., **kwargs):
+                 dropout_W=0., dropout_U=0., reset_afterwards=False, **kwargs):
         self.output_dim = output_dim
         self.init = initializations.get(init)
         self.inner_init = initializations.get(inner_init)
@@ -424,6 +424,7 @@ class GRU(Recurrent):
         self.W_regularizer = regularizers.get(W_regularizer)
         self.U_regularizer = regularizers.get(U_regularizer)
         self.b_regularizer = regularizers.get(b_regularizer)
+        self.reset_afterwards = reset_afterwards
         self.dropout_W, self.dropout_U = dropout_W, dropout_U
 
         if self.dropout_W or self.dropout_U:
@@ -543,8 +544,12 @@ class GRU(Recurrent):
             r = self.inner_activation(x_r + inner_r)
 
             x_h = matrix_x[:, 2 * self.output_dim:]
-            inner_h = K.dot(r * h_tm1 * B_U[0], self.U[:, 2 * self.output_dim:])
-            hh = self.activation(x_h + inner_h)
+            if not self.reset_afterwards:  # classic GRU implementation
+                inner_h = K.dot(r * h_tm1 * B_U[0], self.U[:, 2 * self.output_dim:])
+                hh = self.activation(x_h + inner_h)
+            else:  # reordered Baidu GRU implementation
+                inner_h = r * K.dot(h_tm1 * B_U[0], self.U[:, 2 * self.output_dim:])
+                hh = self.activation(x_h + inner_h)
         else:
             if self.consume_less == 'cpu':
                 x_z = x[:, :self.output_dim]
@@ -559,7 +564,10 @@ class GRU(Recurrent):
             z = self.inner_activation(x_z + K.dot(h_tm1 * B_U[0], self.U_z))
             r = self.inner_activation(x_r + K.dot(h_tm1 * B_U[1], self.U_r))
 
-            hh = self.activation(x_h + K.dot(r * h_tm1 * B_U[2], self.U_h))
+            if not self.reset_afterwards:  # classic GRU implementation
+                hh = self.activation(x_h + K.dot(r * h_tm1 * B_U[2], self.U_h))
+            else:  # reordered Baidu GRU implementation
+                hh = self.activation(x_h + r * K.dot(h_tm1 * B_U[2], self.U_h))
         h = z * h_tm1 + (1 - z) * hh
         return h, [h]
 
@@ -594,7 +602,8 @@ class GRU(Recurrent):
                   'U_regularizer': self.U_regularizer.get_config() if self.U_regularizer else None,
                   'b_regularizer': self.b_regularizer.get_config() if self.b_regularizer else None,
                   'dropout_W': self.dropout_W,
-                  'dropout_U': self.dropout_U}
+                  'dropout_U': self.dropout_U,
+                  'reset_afterwards': self.reset_afterwards}
         base_config = super(GRU, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
