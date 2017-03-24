@@ -443,17 +443,18 @@ def train(run_name, start_epoch, stop_epoch, img_w):
     # cuts down input size going into RNN:
     inner = Dense(time_dense_size, activation=act, name='dense1')(inner)
 
-    # Two layers of bidirecitonal GRUs
+    # Two layers of bidirecitonal GRUs (with separate weights for forward and backward)
     # GRU seems to work as well, if not better than LSTM:
-    gru_1 = GRU(rnn_size, return_sequences=True, kernel_initializer='he_normal', name='gru1')(inner)
-    gru_1b = GRU(rnn_size, return_sequences=True, go_backwards=True, kernel_initializer='he_normal', name='gru1_b')(inner)
-    gru1_merged = add([gru_1, gru_1b])
-    gru_2 = GRU(rnn_size, return_sequences=True, kernel_initializer='he_normal', name='gru2')(gru1_merged)
-    gru_2b = GRU(rnn_size, return_sequences=True, go_backwards=True, kernel_initializer='he_normal', name='gru2_b')(gru1_merged)
+    gru_1_fwd = GRU(rnn_size, return_sequences=True, kernel_initializer='he_normal', name='gru_1_fwd')(inner)
+    gru_1_bck = GRU(rnn_size, return_sequences=True, go_backwards=True, kernel_initializer='he_normal', name='gru_1_bck')(inner)
+    gru_1 = add([gru_1_fwd, K.reverse(gru_1_bck, 1)])
+    gru_2_fwd = GRU(rnn_size, return_sequences=True, kernel_initializer='he_normal', name='gru_2_fwd')(gru_1)
+    gru_2_bck = GRU(rnn_size, return_sequences=True, go_backwards=True, kernel_initializer='he_normal', name='gru_2_bck')(gru_1)
+    gru_2 = concatenate([gru_2_fwd, K.reverse(gru_2_bck, 1)])
 
     # transforms RNN output to character activations:
     inner = Dense(img_gen.get_output_size(), kernel_initializer='he_normal',
-                  name='dense2')(concatenate([gru_2, gru_2b]))
+                  name='dense2')(gru_2)
     y_pred = Activation('softmax', name='softmax')(inner)
     Model(inputs=input_data, outputs=y_pred).summary()
 
